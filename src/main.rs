@@ -1,4 +1,5 @@
 mod server;
+mod thread_pool;
 
 use std::env;
 use server::HttpServer;

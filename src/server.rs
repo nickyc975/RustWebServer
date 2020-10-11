@@ -3,6 +3,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
+use crate::thread_pool::ThreadPool;
 
 // Response headers.
 const HEADER_200: &str = "HTTP/1.1 200 OK\r\n\r\n";
