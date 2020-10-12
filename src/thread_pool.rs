@@ -25,6 +25,8 @@ impl ThreadPool {
     pub fn new(nworkers: usize) -> ThreadPool {
         let mut workers = Vec::new();
         let (send, recv) = mpsc::channel();
+
+        // Wrap up recv so that it can be assigned to multi workers.
         let recv = Arc::new(Mutex::new(recv));
 
         for i in 0..nworkers {
@@ -46,14 +48,20 @@ impl ThreadPool {
         match self.state {
             State::Running => {
                 self.state = State::Stopped;
+
+                // Send stop message to workers.
                 for _ in self.workers.iter() {
                     self.sender.send(Message::Stop).unwrap();
                 }
+
+                // Wait worker threads to stop.
                 for worker in &mut self.workers {
                     println!("Stopping worker {}...", worker.id);
+
                     if let Some(handle) = worker.handle.take() {
                         handle.join().unwrap();
                     }
+
                     println!("Stopped worker {}!", worker.id);
                 }
             }
@@ -76,7 +84,10 @@ struct Worker {
 impl Worker {
     fn new(id: usize, recv: Arc<Mutex<mpsc::Receiver<Message>>>) -> Worker {
         let handle = std::thread::spawn(move || loop {
-            match recv.lock().unwrap().recv().unwrap() {
+            // Acquire the lock and take message, then drop the lock.
+            let message = recv.lock().unwrap().recv().unwrap();
+
+            match message {
                 Message::Job(mut job) => {
                     println!("Worker {} is working...", id);
 

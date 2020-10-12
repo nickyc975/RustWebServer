@@ -27,7 +27,7 @@ impl HttpServer {
     // Start listening to requests.
     pub fn serve(&self) {
         let mut pool = ThreadPool::new(12);
-        for stream in self.listener.incoming().take(2) {
+        for stream in self.listener.incoming() {
             let stream = stream.unwrap();
             println!("Accept connection from: {:?}", stream.peer_addr().unwrap());
             pool.add_job(Box::new(RequestHandler::new(stream)));
