@@ -1,8 +1,8 @@
 mod server;
 mod thread_pool;
 
-use std::env;
 use server::HttpServer;
+use std::env;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -15,4 +15,3 @@ fn main() {
     let server = HttpServer::new(args[1].as_str());
     server.serve();
 }
-

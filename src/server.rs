@@ -26,11 +26,12 @@ impl HttpServer {
 
     // Start listening to requests.
     pub fn serve(&self) {
-        let pool = ThreadPool::new(8);
+        let pool = ThreadPool::new(12);
         for stream in self.listener.incoming() {
             let stream = stream.unwrap();
             println!("Accept connection from: {:?}", stream.peer_addr().unwrap());
-            pool.execute(Box::new(RequestHandler::new(stream)));
+            pool.add_job(Box::new(RequestHandler::new(stream)));
+            println!("Delivered connection!");
         }
     }
 }
@@ -48,7 +49,7 @@ impl RequestHandler {
         RequestHandler {
             stream,
             router,
-            read_timeout: Some(Duration::new(0, 500_000_000)),
+            read_timeout: Some(Duration::from_millis(500)),
         }
     }
 
@@ -80,6 +81,7 @@ impl Job for RequestHandler {
         // Only GET is allowed.
         if request.method != "GET" {
             self.stream.write(HEADER_405.as_bytes()).unwrap();
+            self.stream.flush().unwrap();
             return;
         }
 
@@ -88,6 +90,7 @@ impl Job for RequestHandler {
             Some(path) => path,
             None => {
                 self.stream.write(HEADER_404.as_bytes()).unwrap();
+                self.stream.flush().unwrap();
                 return;
             }
         };
@@ -106,6 +109,7 @@ impl Job for RequestHandler {
                 }
             },
         }
+        self.stream.flush().unwrap();
     }
 }
 

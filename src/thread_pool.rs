@@ -27,7 +27,7 @@ impl ThreadPool {
         }
     }
 
-    pub fn execute(&self, job: Box<dyn Job>) {
+    pub fn add_job(&self, job: Box<dyn Job>) {
         self.sender.send(job).unwrap();
     }
 }
@@ -41,14 +41,14 @@ struct Worker {
 
 impl Worker {
     fn new(id: usize, recv: Arc<Mutex<mpsc::Receiver<Box<dyn Job>>>>) -> Worker {
-        Worker {
-            id,
-            handle: std::thread::spawn(move || loop {
-                let mut job = recv.lock().unwrap().recv().unwrap();
-                println!("Worker {} is working...", id);
-                job.execute();
-                println!("Worker {} finished work!", id);
-            }),
-        }
+        let handle = std::thread::spawn(move || loop {
+            let mut job = recv.lock().unwrap().recv().unwrap();
+            println!("Worker {} is working...", id);
+            // thread::sleep(std::time::Duration::from_millis(5000));
+            job.execute();
+            println!("Worker {} finished work!", id);
+        });
+
+        Worker { id, handle }
     }
 }
