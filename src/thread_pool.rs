@@ -1,14 +1,14 @@
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
-pub trait Executable {
+pub trait Job: Send {
     fn execute(&mut self);
 }
 
 pub struct ThreadPool {
     #[used]
     workers: Vec<Worker>,
-    sender: mpsc::Sender<Job>,
+    sender: mpsc::Sender<Box<dyn Job>>,
 }
 
 impl ThreadPool {
@@ -27,8 +27,7 @@ impl ThreadPool {
         }
     }
 
-    pub fn execute(&self, job: Job)
-    {
+    pub fn execute(&self, job: Box<dyn Job>) {
         self.sender.send(job).unwrap();
     }
 }
@@ -41,7 +40,7 @@ struct Worker {
 }
 
 impl Worker {
-    fn new(id: usize, recv: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+    fn new(id: usize, recv: Arc<Mutex<mpsc::Receiver<Box<dyn Job>>>>) -> Worker {
         Worker {
             id,
             handle: std::thread::spawn(move || loop {
@@ -53,5 +52,3 @@ impl Worker {
         }
     }
 }
-
-type Job = Box<dyn Executable + Send>;
