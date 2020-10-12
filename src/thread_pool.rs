@@ -1,18 +1,13 @@
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
-enum Message {
-    Job(Box<dyn Job>),
-    Stop,
-}
-
-enum State {
-    Running,
-    Stopped,
+pub enum ErrorKind {
+    StateError,
+    EnqueueError,
 }
 
 pub trait Job: Send {
-    fn execute(&mut self);
+    fn run(&mut self);
 }
 
 pub struct ThreadPool {
@@ -23,49 +18,60 @@ pub struct ThreadPool {
 
 impl ThreadPool {
     pub fn new(nworkers: usize) -> ThreadPool {
-        let mut workers = Vec::new();
+        assert!(nworkers > 0);
+
         let (send, recv) = mpsc::channel();
+        let mut workers = Vec::with_capacity(nworkers);
 
         // Wrap up recv so that it can be assigned to multi workers.
         let recv = Arc::new(Mutex::new(recv));
 
+        // Create workers.
         for i in 0..nworkers {
             workers.push(Worker::new(i, Arc::clone(&recv)));
         }
 
         ThreadPool {
-            state: State::Running,
+            state: State::Working,
             workers: workers,
             sender: send,
         }
     }
 
-    pub fn add_job(&self, job: Box<dyn Job>) {
-        self.sender.send(Message::Job(job)).unwrap();
+    pub fn enqueue(&self, job: Box<dyn Job>) -> Result<(), ErrorKind> {
+        // Check if the thread pool has been closed.
+        match self.state {
+            State::Working => match self.sender.send(Message::Run(job)) {
+                Err(_) => Err(ErrorKind::EnqueueError),
+                Ok(_) => Ok(()),
+            },
+            _ => Err(ErrorKind::StateError),
+        }
     }
 
     pub fn close(&mut self) {
-        match self.state {
-            State::Running => {
-                self.state = State::Stopped;
+        // Check if the thread pool has been closed.
+        if let State::Closed = self.state {
+            return;
+        }
 
-                // Send stop message to workers.
-                for _ in self.workers.iter() {
-                    self.sender.send(Message::Stop).unwrap();
-                }
+        // Update state.
+        self.state = State::Closed;
 
-                // Wait worker threads to stop.
-                for worker in &mut self.workers {
-                    println!("Stopping worker {}...", worker.id);
+        // Send stop message to workers.
+        for _ in self.workers.iter() {
+            self.sender.send(Message::Stop).unwrap();
+        }
 
-                    if let Some(handle) = worker.handle.take() {
-                        handle.join().unwrap();
-                    }
+        // Wait worker threads to stop.
+        for worker in &mut self.workers {
+            println!("Stopping worker {}...", worker.id);
 
-                    println!("Stopped worker {}!", worker.id);
-                }
+            if let Some(handle) = worker.handle.take() {
+                handle.join().unwrap();
             }
-            _ => (),
+
+            println!("Stopped worker {}!", worker.id);
         }
     }
 }
@@ -74,6 +80,16 @@ impl Drop for ThreadPool {
     fn drop(&mut self) {
         self.close();
     }
+}
+
+enum Message {
+    Run(Box<dyn Job>),
+    Stop,
+}
+
+enum State {
+    Working,
+    Closed,
 }
 
 struct Worker {
@@ -88,11 +104,11 @@ impl Worker {
             let message = recv.lock().unwrap().recv().unwrap();
 
             match message {
-                Message::Job(mut job) => {
+                Message::Run(mut job) => {
                     println!("Worker {} is working...", id);
 
                     // thread::sleep(std::time::Duration::from_millis(5000));
-                    job.execute();
+                    job.run();
 
                     println!("Worker {} finished work!", id);
                 }

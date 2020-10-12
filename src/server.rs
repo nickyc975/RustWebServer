@@ -30,8 +30,10 @@ impl HttpServer {
         for stream in self.listener.incoming() {
             let stream = stream.unwrap();
             println!("Accept connection from: {:?}", stream.peer_addr().unwrap());
-            pool.add_job(Box::new(RequestHandler::new(stream)));
-            println!("Delivered connection!");
+            match pool.enqueue(Box::new(RequestHandler::new(stream))) {
+                Err(_) => println!("Error enqueuing job!"),
+                Ok(_) => (),
+            }
         }
         pool.close();
     }
@@ -76,7 +78,7 @@ impl RequestHandler {
 }
 
 impl Job for RequestHandler {
-    fn execute(&mut self) {
+    fn run(&mut self) {
         let request = self.parse_request();
 
         // Only GET is allowed.
