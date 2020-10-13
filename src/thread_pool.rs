@@ -1,17 +1,11 @@
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
-pub enum ErrorKind {
-    StateError,
-    EnqueueError,
-}
-
 pub trait Job: Send {
     fn run(&mut self);
 }
 
 pub struct ThreadPool {
-    state: State,
     workers: Vec<Worker>,
     sender: mpsc::Sender<Message>,
 }
@@ -32,32 +26,21 @@ impl ThreadPool {
         }
 
         ThreadPool {
-            state: State::Working,
             workers: workers,
             sender: send,
         }
     }
 
-    pub fn enqueue(&self, job: Box<dyn Job>) -> Result<(), ErrorKind> {
-        // Check if the thread pool has been closed.
-        match self.state {
-            State::Working => match self.sender.send(Message::Run(job)) {
-                Err(_) => Err(ErrorKind::EnqueueError),
-                Ok(_) => Ok(()),
-            },
-            _ => Err(ErrorKind::StateError),
+    pub fn enqueue(&self, job: Box<dyn Job>) -> Result<(), String> {
+        match self.sender.send(Message::Run(job)) {
+            Err(_) => Err(String::from("Error enqueuing job!")),
+            Ok(_) => Ok(()),
         }
     }
+}
 
-    pub fn close(&mut self) {
-        // Check if the thread pool has been closed.
-        if let State::Closed = self.state {
-            return;
-        }
-
-        // Update state.
-        self.state = State::Closed;
-
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
         // Send stop message to workers.
         for _ in self.workers.iter() {
             self.sender.send(Message::Stop).unwrap();
@@ -76,20 +59,9 @@ impl ThreadPool {
     }
 }
 
-impl Drop for ThreadPool {
-    fn drop(&mut self) {
-        self.close();
-    }
-}
-
 enum Message {
     Run(Box<dyn Job>),
     Stop,
-}
-
-enum State {
-    Working,
-    Closed,
 }
 
 struct Worker {

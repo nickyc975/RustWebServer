@@ -26,16 +26,16 @@ impl HttpServer {
 
     // Start listening to requests.
     pub fn serve(&self) {
-        let mut pool = ThreadPool::new(12);
+        let pool = ThreadPool::new(12);
         for stream in self.listener.incoming() {
             let stream = stream.unwrap();
             println!("Accept connection from: {:?}", stream.peer_addr().unwrap());
             match pool.enqueue(Box::new(RequestHandler::new(stream))) {
-                Err(_) => println!("Error enqueuing job!"),
+                Err(msg) => println!("{}", msg),
                 Ok(_) => (),
             }
         }
-        pool.close();
+        drop(pool);
     }
 }
 
