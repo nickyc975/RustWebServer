@@ -1,3 +1,27 @@
+//! An implementation of M:N job scheduling model.
+//!
+//! ### Examples
+//! ```rust
+//! // Define a struct to hold all the needed information for you job.
+//! struct MyJob(i32);
+//!
+//! // Implement Job trait for the struct so that thread pool knowns how to run your job.
+//! impl Job for MyJob {
+//!     fn run(&self) {
+//!         // Say hello.
+//!         println!("Hello from job {}", self.0);
+//!     }
+//! }
+//!
+//! fn main() {
+//!     // Create a thread pool and start you jobs.
+//!     let pool = ThreadPool::new(4);
+//!     for i in 0..8 {
+//!         pool.enqueue(Box::new(MyJob(i)));
+//!     }
+//! }
+//! ```
+
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
