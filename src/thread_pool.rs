@@ -2,7 +2,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
 pub trait Job: Send {
-    fn run(&mut self);
+    fn run(&self);
 }
 
 pub struct ThreadPool {
@@ -76,7 +76,7 @@ impl Worker {
             let message = recv.lock().unwrap().recv().unwrap();
 
             match message {
-                Message::Run(mut job) => {
+                Message::Run(job) => {
                     println!("Worker {} is working...", id);
 
                     // thread::sleep(std::time::Duration::from_millis(5000));

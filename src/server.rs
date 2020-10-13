@@ -1,8 +1,10 @@
 use crate::thread_pool::{Job, ThreadPool};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::Arc;
 use std::time::Duration;
 
 // Response headers.
@@ -14,13 +16,20 @@ const HEADER_500: &str = "Http/1.1 500 INTERNAL ERROR\r\n\r\n";
 // Main http server struct.
 pub struct HttpServer {
     listener: TcpListener,
+    read_timeout: Arc<Option<Duration>>,
+    router: Arc<HashMap<String, String>>,
 }
 
 impl HttpServer {
     // Create a http server listening at addr.
     pub fn new(addr: &str) -> HttpServer {
+        let mut router = HashMap::new();
+        router.insert(String::from("/"), String::from("assets/index.html"));
+
         HttpServer {
             listener: TcpListener::bind(addr).unwrap(),
+            read_timeout: Arc::new(Some(Duration::from_millis(500))),
+            router: Arc::new(router),
         }
     }
 
@@ -30,7 +39,11 @@ impl HttpServer {
         for stream in self.listener.incoming() {
             let stream = stream.unwrap();
             println!("Accept connection from: {:?}", stream.peer_addr().unwrap());
-            match pool.enqueue(Box::new(RequestHandler::new(stream))) {
+            match pool.enqueue(Box::new(RequestHandler::new(
+                stream,
+                Arc::clone(&self.read_timeout),
+                Arc::clone(&self.router),
+            ))) {
                 Err(msg) => println!("{}", msg),
                 Ok(_) => (),
             }
@@ -40,29 +53,33 @@ impl HttpServer {
 }
 
 struct RequestHandler {
-    stream: TcpStream,
-    router: HashMap<String, String>,
-    read_timeout: Option<Duration>,
+    stream: RefCell<TcpStream>,
+    read_timeout: Arc<Option<Duration>>,
+    router: Arc<HashMap<String, String>>,
 }
 
 impl RequestHandler {
-    fn new(stream: TcpStream) -> RequestHandler {
-        let mut router = HashMap::new();
-        router.insert(String::from("/"), String::from("assets/index.html"));
+    fn new(
+        stream: TcpStream,
+        read_timeout: Arc<Option<Duration>>,
+        router: Arc<HashMap<String, String>>,
+    ) -> RequestHandler {
         RequestHandler {
-            stream,
+            stream: RefCell::new(stream),
+            read_timeout,
             router,
-            read_timeout: Some(Duration::from_millis(500)),
         }
     }
 
-    fn parse_request(&mut self) -> HttpRequest {
+    fn parse_request(&self) -> HttpRequest {
+        let mut stream = self.stream.borrow_mut();
+
         // Set read timeout.
-        self.stream.set_read_timeout(self.read_timeout).unwrap();
+        stream.set_read_timeout(*self.read_timeout).unwrap();
 
         // Read request contents.
         let mut buffer: Vec<u8> = Vec::new();
-        match self.stream.read_to_end(&mut buffer) {
+        match stream.read_to_end(&mut buffer) {
             Err(e) => match e.kind() {
                 std::io::ErrorKind::WouldBlock => {}
                 std::io::ErrorKind::TimedOut => {}
@@ -78,13 +95,14 @@ impl RequestHandler {
 }
 
 impl Job for RequestHandler {
-    fn run(&mut self) {
+    fn run(&self) {
         let request = self.parse_request();
+        let mut stream = self.stream.borrow_mut();
 
         // Only GET is allowed.
         if request.method != "GET" {
-            self.stream.write(HEADER_405.as_bytes()).unwrap();
-            self.stream.flush().unwrap();
+            stream.write(HEADER_405.as_bytes()).unwrap();
+            stream.flush().unwrap();
             return;
         }
 
@@ -92,27 +110,27 @@ impl Job for RequestHandler {
         let file_path: &str = match self.router.get(request_url) {
             Some(path) => path,
             None => {
-                self.stream.write(HEADER_404.as_bytes()).unwrap();
-                self.stream.flush().unwrap();
+                stream.write(HEADER_404.as_bytes()).unwrap();
+                stream.flush().unwrap();
                 return;
             }
         };
 
         match fs::read_to_string(file_path) {
             Ok(content) => {
-                self.stream.write(HEADER_200.as_bytes()).unwrap();
-                self.stream.write(content.as_bytes()).unwrap();
+                stream.write(HEADER_200.as_bytes()).unwrap();
+                stream.write(content.as_bytes()).unwrap();
             }
             Err(e) => match e.kind() {
                 std::io::ErrorKind::NotFound => {
-                    self.stream.write(HEADER_404.as_bytes()).unwrap();
+                    stream.write(HEADER_404.as_bytes()).unwrap();
                 }
                 _ => {
-                    self.stream.write(HEADER_500.as_bytes()).unwrap();
+                    stream.write(HEADER_500.as_bytes()).unwrap();
                 }
             },
         }
-        self.stream.flush().unwrap();
+        stream.flush().unwrap();
     }
 }
 
