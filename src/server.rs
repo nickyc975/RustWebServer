@@ -81,8 +81,7 @@ impl RequestHandler {
         let mut buffer: Vec<u8> = Vec::new();
         match stream.read_to_end(&mut buffer) {
             Err(e) => match e.kind() {
-                std::io::ErrorKind::WouldBlock => {}
-                std::io::ErrorKind::TimedOut => {}
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut => {}
                 _ => {
                     panic!(e);
                 }
